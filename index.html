@@ -177,6 +177,7 @@ main{padding:16px;max-width:960px;margin:0 auto;}
     </div>
     <div class="tabs">
       <button class="tab on" onclick="switchTab('inventory',this)">📦 Inventario</button>
+      <button class="tab" onclick="switchTab('movements',this)">🔄 Movimientos</button>
       <button class="tab" onclick="switchTab('dashboard',this)">📊 Resumen</button>
       <button class="tab" id="tabUsers" onclick="switchTab('users',this)" style="display:none">👥 Usuarios</button>
     </div>
@@ -245,6 +246,42 @@ main{padding:16px;max-width:960px;margin:0 auto;}
   </div>
 </div>
 
+<!-- MODAL MOVIMIENTO -->
+<div class="overlay" id="moveModal" onclick="closeModal('moveModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div class="modal-title" id="moveModalTitle">Registrar movimiento</div>
+      <button class="btn-close" onclick="closeModal('moveModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mItemId">
+      <input type="hidden" id="mTipo">
+      <div id="mProdBox" style="background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:14px">
+        <div style="font-weight:700;font-size:15px" id="mProdName"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Stock actual: <span id="mProdQty" style="font-weight:700"></span> <span id="mProdUnit"></span></div>
+      </div>
+      <label class="lbl">Cantidad *</label>
+      <input class="inp" type="number" id="mQty" min="0" step="0.1" placeholder="¿Cuántas unidades?" oninput="updateMovePreview()">
+      <div id="mPreview" style="font-size:13px;margin:8px 0 4px;color:var(--muted)"></div>
+      <label class="lbl">Motivo</label>
+      <select class="inp" id="mMotivo">
+        <option value="Compra">🛒 Compra a proveedor</option>
+        <option value="Venta/Consumo">🍽 Venta / consumo</option>
+        <option value="Merma">🗑 Merma / caducidad</option>
+        <option value="Ajuste">⚖️ Ajuste de conteo</option>
+        <option value="Traspaso">📦 Traspaso Piso/Bodega</option>
+        <option value="Otro">✏️ Otro</option>
+      </select>
+      <label class="lbl">Notas</label>
+      <input class="inp" id="mNotes" placeholder="Opcional...">
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeModal('moveModal')">Cancelar</button>
+      <button class="btn-save" id="moveSaveBtn" onclick="saveMovement()">Registrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL USUARIO -->
 <div class="overlay" id="userModal" onclick="closeModal('userModal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -305,7 +342,8 @@ const CATS = ['Alcohol','Refrescos','Abarrotes','Desechables','Limpieza'];
 
 const URL_SUGERIDA = "https://script.google.com/macros/s/AKfycbwYCac8AAJFet-02dqdob4X_oCHWtl_p9_uHHZ2htLMCXqa53ooeV1niRQAdQElZlHXtA/exec";
 let SCRIPT_URL = localStorage.getItem('rp_script_url') || '';
-let users=[],items=[],currentUser=null,currentTab='inventory',catFilter='Todas',locFilter='Todas',searchTerm='';
+let users=[],items=[],movements=[],currentUser=null,currentTab='inventory',catFilter='Todas',locFilter='Todas',searchTerm='';
+let moveFilter='Todos';
 
 window.onload = () => {
   const src = 'data:image/png;base64,'+LOGO_B64;
@@ -355,8 +393,9 @@ async function loadAll(){
   showLoader('Cargando...');
   const defUsers=[{id:'1',name:'Administrador',role:'admin',pin:'1234'},{id:'2',name:'Empleado',role:'employee',pin:'0000'}];
   try {
-    const[ir,ur]=await Promise.all([api('getItems'),api('getUsers')]);
+    const[ir,ur,mr]=await Promise.all([api('getItems'),api('getUsers'),api('getMovements')]);
     if(ir.ok) items=ir.data||[];
+    if(mr&&mr.ok) movements=mr.data||[];
     if(ur.ok){
       if(ur.data && ur.data.length>0){
         // Sheet tiene datos → usarlos
@@ -417,6 +456,7 @@ function switchTab(tab,el){
 function renderMain(){
   const c=document.getElementById('mainContent');
   if(currentTab==='inventory') c.innerHTML=renderInventory();
+  else if(currentTab==='movements') c.innerHTML=renderMovements();
   else if(currentTab==='dashboard') c.innerHTML=renderDashboard();
   else if(currentTab==='users') c.innerHTML=renderUsers();
 }
@@ -479,6 +519,10 @@ function cardHTML(item,isAdmin){
       ${item.supplier?`<span>🏪 ${escH(item.supplier)}</span>`:''}
       <span style="margin-left:auto">🕐 ${fmtDate(item.updatedAt||item.createdAt)}</span>
     </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="openMoveModal('${item.id}','entrada')" style="flex:1;background:rgba(46,204,113,.14);color:var(--green);border:1px solid rgba(46,204,113,.35);border-radius:8px;padding:8px;font-family:Georgia;font-weight:700;font-size:13px;cursor:pointer">➕ Entrada</button>
+      <button onclick="openMoveModal('${item.id}','salida')" style="flex:1;background:rgba(231,76,60,.14);color:var(--red);border:1px solid rgba(231,76,60,.35);border-radius:8px;padding:8px;font-family:Georgia;font-weight:700;font-size:13px;cursor:pointer">➖ Salida</button>
+    </div>
     ${isAdmin?`<div class="card-actions">
       <button class="btn-edit" onclick="openItemModal('${item.id}')">✏️ Editar</button>
       <div id="del-${item.id}"><button class="btn-del" onclick="showConfirm('${item.id}')">🗑</button></div>
@@ -489,6 +533,99 @@ function showConfirm(id){
   document.getElementById('del-'+id).innerHTML=`<div class="confirm-row"><button class="btn-confirm" onclick="deleteItem('${id}')">Confirmar</button><button class="btn-no" onclick="renderMain()">No</button></div>`;
 }
 
+function openMoveModal(id,tipo){
+  const item=items.find(i=>i.id===id); if(!item)return;
+  document.getElementById('mItemId').value=item.id;
+  document.getElementById('mTipo').value=tipo;
+  document.getElementById('mProdName').textContent=(CAT_ICONS[item.category]||'')+' '+item.name;
+  document.getElementById('mProdQty').textContent=item.qty;
+  document.getElementById('mProdUnit').textContent=item.unit||'pieza';
+  document.getElementById('moveModalTitle').textContent=tipo==='entrada'?'➕ Registrar entrada':'➖ Registrar salida';
+  const btn=document.getElementById('moveSaveBtn');
+  btn.textContent=tipo==='entrada'?'Registrar entrada':'Registrar salida';
+  btn.style.background=tipo==='entrada'?'var(--green)':'var(--red)';
+  document.getElementById('mMotivo').value=tipo==='entrada'?'Compra':'Venta/Consumo';
+  document.getElementById('mQty').value='';
+  document.getElementById('mNotes').value='';
+  document.getElementById('mPreview').textContent='';
+  document.getElementById('moveModal').classList.add('open');
+  setTimeout(()=>document.getElementById('mQty').focus(),100);
+}
+function updateMovePreview(){
+  const item=items.find(i=>i.id===document.getElementById('mItemId').value); if(!item)return;
+  const tipo=document.getElementById('mTipo').value;
+  const amt=parseFloat(document.getElementById('mQty').value)||0;
+  const nueva=tipo==='entrada'?item.qty+amt:item.qty-amt;
+  const p=document.getElementById('mPreview');
+  if(amt<=0){p.textContent='';return;}
+  const col=nueva<0?'var(--red)':'var(--accent)';
+  p.innerHTML=`Nuevo stock: <b style="color:${col}">${nueva}</b> ${item.unit||''}`+(nueva<0?' ⚠️ quedaría negativo':'');
+}
+async function saveMovement(){
+  const id=document.getElementById('mItemId').value;
+  const tipo=document.getElementById('mTipo').value;
+  const amt=parseFloat(document.getElementById('mQty').value)||0;
+  if(amt<=0){alert('Escribe una cantidad mayor a 0');return;}
+  const item=items.find(i=>i.id===id); if(!item)return;
+  const nueva=tipo==='entrada'?item.qty+amt:item.qty-amt;
+  if(nueva<0&&!confirm('El stock quedaría negativo. ¿Registrar de todas formas?'))return;
+  const motivo=document.getElementById('mMotivo').value;
+  const notas=document.getElementById('mNotes').value.trim();
+  const mov={id:uid(),ts:Date.now(),usuario:currentUser.name,itemId:item.id,itemName:item.name,
+    tipo,cantidad:amt,saldo:nueva,motivo,notas};
+  closeModal('moveModal'); showLoader('Registrando...');
+  const prevItems=JSON.parse(JSON.stringify(items));
+  item.qty=nueva; item.updatedAt=Date.now();
+  const res=await api('saveItems',{items});
+  if(!res.ok){
+    items=prevItems; hideLoader();
+    showToast('❌ Error al actualizar stock: '+(res.error||'sin respuesta'),'err');
+    renderMain(); return;
+  }
+  const mres=await api('saveMovement',{movement:mov});
+  hideLoader();
+  if(mres&&mres.ok){ movements.unshift(mov); }
+  else { movements.unshift(mov);
+    showToast('⚠️ Stock actualizado, pero el historial no se guardó en la nube','err');
+  }
+  showToast((tipo==='entrada'?'➕ Entrada':'➖ Salida')+` de ${amt} registrada ✓`);
+  renderMain();
+}
+function renderMovements(){
+  const list=[...movements].sort((a,b)=>(b.ts||0)-(a.ts||0))
+    .filter(m=>moveFilter==='Todos'||m.tipo===(moveFilter==='Entradas'?'entrada':'salida'))
+    .filter(m=>(m.itemName||'').toLowerCase().includes(searchTerm.toLowerCase()));
+  const hoy=new Date().toDateString();
+  const entHoy=movements.filter(m=>m.tipo==='entrada'&&new Date(m.ts).toDateString()===hoy).length;
+  const salHoy=movements.filter(m=>m.tipo==='salida'&&new Date(m.ts).toDateString()===hoy).length;
+  return`${syncBar()}
+    <div class="stats-grid">
+      <div class="stat-card" style="border-left:4px solid var(--green)"><span style="font-size:24px">➕</span><div><div style="font-size:18px;font-weight:800;color:var(--green)">${entHoy}</div><div style="font-size:11px;color:var(--muted)">Entradas hoy</div></div></div>
+      <div class="stat-card" style="border-left:4px solid var(--red)"><span style="font-size:24px">➖</span><div><div style="font-size:18px;font-weight:800;color:var(--red)">${salHoy}</div><div style="font-size:11px;color:var(--muted)">Salidas hoy</div></div></div>
+      <div class="stat-card" style="border-left:4px solid var(--accent)"><span style="font-size:24px">📋</span><div><div style="font-size:18px;font-weight:800;color:var(--accent)">${movements.length}</div><div style="font-size:11px;color:var(--muted)">Total registrados</div></div></div>
+    </div>
+    <div class="top-bar">
+      <input class="search" placeholder="🔍 Buscar producto..." value="${escH(searchTerm)}" oninput="searchTerm=this.value;renderMain()">
+    </div>
+    <div class="cat-row">
+      ${['Todos','Entradas','Salidas'].map(f=>`<button class="chip${moveFilter===f?' on':''}" onclick="moveFilter='${f}';renderMain()">${f}</button>`).join('')}
+    </div>
+    ${list.length===0
+      ?`<div class="empty"><div style="font-size:44px">🔄</div><div>Sin movimientos aún</div></div>`
+      :`<div style="display:flex;flex-direction:column;gap:8px">${list.map(m=>{
+        const ent=m.tipo==='entrada';const col=ent?'var(--green)':'var(--red)';
+        return`<div class="card" style="border-left:4px solid ${col}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div><div style="font-weight:700;font-size:14px">${escH(m.itemName)}</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:3px">${escH(m.motivo||'')}${m.notas?' · '+escH(m.notas):''}</div></div>
+            <div style="text-align:right"><div style="font-size:18px;font-weight:800;color:${col}">${ent?'+':'-'}${m.cantidad}</div>
+            <div style="font-size:10px;color:var(--muted)">saldo: ${m.saldo}</div></div>
+          </div>
+          <div style="font-size:11px;color:var(--dim);margin-top:6px;display:flex;justify-content:space-between">
+            <span>👤 ${escH(m.usuario||'')}</span><span>🕐 ${fmtDate(m.ts)}</span>
+          </div>
+        </div>`;}).join('')}</div>`}`;
+}
 function renderDashboard(){
   const isAdmin=currentUser.role==='admin';
   const low=items.filter(i=>i.minQty>0&&i.qty<i.minQty);
