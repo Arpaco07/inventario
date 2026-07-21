@@ -389,12 +389,20 @@ async function api(action, data={}) {
   }
 }
 
+function normItem(i){
+  i.qty=parseFloat(i.qty)||0;
+  i.minQty=parseFloat(i.minQty)||0;
+  i.cost=parseFloat(i.cost)||0;
+  if(i.updatedAt)i.updatedAt=Number(i.updatedAt)||i.updatedAt;
+  if(i.createdAt)i.createdAt=Number(i.createdAt)||i.createdAt;
+  return i;
+}
 async function loadAll(){
   showLoader('Cargando...');
   const defUsers=[{id:'1',name:'Administrador',role:'admin',pin:'1234'},{id:'2',name:'Empleado',role:'employee',pin:'0000'}];
   try {
     const[ir,ur,mr]=await Promise.all([api('getItems'),api('getUsers'),api('getMovements')]);
-    if(ir.ok) items=ir.data||[];
+    if(ir.ok) items=(ir.data||[]).map(normItem);
     if(mr&&mr.ok) movements=mr.data||[];
     if(ur.ok){
       if(ur.data && ur.data.length>0){
@@ -555,7 +563,8 @@ function updateMovePreview(){
   const item=items.find(i=>i.id===document.getElementById('mItemId').value); if(!item)return;
   const tipo=document.getElementById('mTipo').value;
   const amt=parseFloat(document.getElementById('mQty').value)||0;
-  const nueva=tipo==='entrada'?item.qty+amt:item.qty-amt;
+  const actual=parseFloat(item.qty)||0;
+  const nueva=tipo==='entrada'?actual+amt:actual-amt;
   const p=document.getElementById('mPreview');
   if(amt<=0){p.textContent='';return;}
   const col=nueva<0?'var(--red)':'var(--accent)';
@@ -567,7 +576,8 @@ async function saveMovement(){
   const amt=parseFloat(document.getElementById('mQty').value)||0;
   if(amt<=0){alert('Escribe una cantidad mayor a 0');return;}
   const item=items.find(i=>i.id===id); if(!item)return;
-  const nueva=tipo==='entrada'?item.qty+amt:item.qty-amt;
+  const actual=parseFloat(item.qty)||0;
+  const nueva=tipo==='entrada'?actual+amt:actual-amt;
   if(nueva<0&&!confirm('El stock quedaría negativo. ¿Registrar de todas formas?'))return;
   const motivo=document.getElementById('mMotivo').value;
   const notas=document.getElementById('mNotes').value.trim();
@@ -808,7 +818,7 @@ async function generatePDF(category){
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
 function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtDate(ts){ if(!ts)return'—'; return new Date(ts).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDate(ts){ if(!ts)return'—'; const n=Number(ts); const d=new Date(isNaN(n)?ts:n); if(isNaN(d.getTime()))return'—'; return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); }
 function showLoader(msg){ document.getElementById('loader').classList.add('show'); document.getElementById('loaderMsg').textContent=msg||'Cargando...'; }
 function hideLoader(){ document.getElementById('loader').classList.remove('show'); }
 function showToast(msg,type){ const t=document.getElementById('toast'); t.textContent=msg; t.style.background=type==='err'?'#c0392b':'#27ae60'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
