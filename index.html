@@ -316,16 +316,7 @@ main{padding:16px;max-width:960px;margin:0 auto;}
       <div class="modal-title">📄 Generar PDF</div>
       <button class="btn-close" onclick="closeModal('pdfModal')">✕</button>
     </div>
-    <div class="modal-body">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">El PDF se guarda en tu Google Drive (carpeta LosPares_PDFs).</div>
-      <button class="pdf-option-btn" onclick="generatePDF(null)">📋 <div><b>Inventario General</b><br><span style="font-size:11px;color:var(--dim)">Todas las categorías — Piso y Bodega</span></div></button>
-      <button class="pdf-option-btn" onclick="generatePDF('Alcohol')">🍾 <div><b>Solo Alcohol</b></div></button>
-      <button class="pdf-option-btn" onclick="generatePDF('Refrescos')">🥤 <div><b>Solo Refrescos</b></div></button>
-      <button class="pdf-option-btn" onclick="generatePDF('Abarrotes')">🛒 <div><b>Solo Abarrotes</b></div></button>
-      <button class="pdf-option-btn" onclick="generatePDF('Desechables')">🗑 <div><b>Solo Desechables</b></div></button>
-      <button class="pdf-option-btn" onclick="generatePDF('Limpieza')">🧹 <div><b>Solo Limpieza</b></div></button>
-      <div class="pdf-status" id="pdfStatus"></div>
-    </div>
+    <div class="modal-body" id="pdfModalBody"></div>
   </div>
 </div>
 
@@ -347,6 +338,7 @@ let SCRIPT_URL = localStorage.getItem('rp_script_url') || URL_SUGERIDA;
 if(!localStorage.getItem('rp_script_url')) localStorage.setItem('rp_script_url', SCRIPT_URL);
 let users=[],items=[],movements=[],currentUser=null,currentTab='inventory',catFilter='Todas',locFilter='Todas',searchTerm='';
 let moveFilter='Todos';
+let pdfCat='Todas',pdfLoc='Todas';
 
 window.onload = () => {
   const src = 'data:image/png;base64,'+LOGO_B64;
@@ -484,7 +476,7 @@ function renderInventory(){
     <div class="top-bar">
       <input class="search" id="invSearch" placeholder="🔍 Buscar..." value="${escH(searchTerm)}" oninput="onInvSearch(this.value)">
       <button class="btn-add" onclick="openItemModal()">＋ Agregar</button>
-      <button class="btn-pdf" onclick="document.getElementById('pdfModal').classList.add('open')">📄 PDF</button>
+      <button class="btn-pdf" onclick="openPdfModal()">📄 PDF</button>
     </div>
     <div class="cat-row">
       ${['Todas',...CATS].map(c=>`<button class="chip${catFilter===c?' on':''}" onclick="catFilter='${c}';renderMain()">${c!=='Todas'?CAT_ICONS[c]+' ':''}${c}</button>`).join('')}
@@ -677,7 +669,7 @@ function renderDashboard(){
     <div class="cat-cards">
       ${CATS.map(c=>`<div class="cat-card"><span style="font-size:22px">${CAT_ICONS[c]}</span><div><div style="font-weight:800;color:var(--accent);font-size:18px">${items.filter(i=>i.category===c).length}</div><div style="font-size:11px;color:var(--muted)">${c}</div></div></div>`).join('')}
     </div>
-    <button class="btn-pdf" style="width:100%;padding:13px;font-size:14px;border-radius:10px;margin-bottom:16px" onclick="document.getElementById('pdfModal').classList.add('open')">📄 Generar PDF del inventario</button>
+    <button class="btn-pdf" style="width:100%;padding:13px;font-size:14px;border-radius:10px;margin-bottom:16px" onclick="openPdfModal()">📄 Generar PDF del inventario</button>
     ${low.length?`<div class="sec-title">⚠️ Requieren reposición</div><div class="grid">${low.map(i=>cardHTML(i,isAdmin)).join('')}</div>`:''}`;
 }
 
@@ -820,19 +812,100 @@ async function deleteUser(id){
   renderMain();
 }
 
-async function generatePDF(category){
-  const status=document.getElementById('pdfStatus');
-  status.textContent='⏳ Generando PDF, espera...';
-  status.style.color='var(--muted)';
-  const filter=category?{category}:{};
-  const res=await api('generatePDF',{filter});
-  if(res.ok){
-    status.innerHTML=`✅ Listo. <a href="${res.url}" target="_blank" style="color:var(--accent);font-weight:bold">Abrir PDF ↗</a>`;
-    status.style.color='var(--green)';
-  }else{
-    status.textContent='❌ Error: '+(res.error||'No se pudo generar');
-    status.style.color='var(--red)';
-  }
+function openPdfModal(){
+  renderPdfModal();
+  document.getElementById('pdfModal').classList.add('open');
+}
+function setPdfCat(c){ pdfCat=c; renderPdfModal(); }
+function setPdfLoc(l){ pdfLoc=l; renderPdfModal(); }
+function pdfFiltered(){
+  return items
+    .filter(i=>pdfCat==='Todas'||i.category===pdfCat)
+    .filter(i=>pdfLoc==='Todas'||(i.location||'Piso')===pdfLoc)
+    .sort((a,b)=>(a.category||'').localeCompare(b.category||'')||(a.name||'').localeCompare(b.name||''));
+}
+function renderPdfModal(){
+  const n=pdfFiltered().length;
+  const catChips=['Todas',...CATS].map(c=>`<button class="chip${pdfCat===c?' on':''}" onclick="setPdfCat('${c}')">${c!=='Todas'?CAT_ICONS[c]+' ':''}${c}</button>`).join('');
+  const locChips=[['Todas','🗂'],['Piso','📍'],['Bodega','🏠']].map(([l,ic])=>`<button class="chip${pdfLoc===l?' on':''}" onclick="setPdfLoc('${l}')">${ic} ${l}</button>`).join('');
+  document.getElementById('pdfModalBody').innerHTML=`
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Elige qué imprimir. Se abrirá el diálogo de impresión, donde puedes imprimir o <b>Guardar como PDF</b>.</div>
+    <label class="lbl">Categoría</label>
+    <div class="cat-row" style="margin-bottom:12px">${catChips}</div>
+    <label class="lbl">Ubicación</label>
+    <div class="cat-row" style="margin-bottom:14px">${locChips}</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+      📦 <b>${n}</b> producto${n===1?'':'s'} en <b>${pdfCat}</b> · <b>${pdfLoc}</b>
+    </div>
+    <button class="pdf-option-btn" style="justify-content:center;font-weight:800" onclick="printPdf()" ${n===0?'disabled style="opacity:.5;pointer-events:none;justify-content:center"':''}>🖨️ Generar e imprimir</button>`;
+}
+function printPdf(){
+  const rows=pdfFiltered();
+  if(!rows.length) return;
+  const isAdmin=currentUser&&currentUser.role==='admin';
+  const fecha=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const catTxt=pdfCat==='Todas'?'Todas las categorías':pdfCat;
+  const locTxt=pdfLoc==='Todas'?'Piso y Bodega':pdfLoc;
+
+  let body='',lastCat=null,totalVal=0;
+  rows.forEach(i=>{
+    if(pdfCat==='Todas'&&i.category!==lastCat){
+      lastCat=i.category;
+      body+=`<tr class="grp"><td colspan="${isAdmin?7:6}">${CAT_ICONS[i.category]||''} ${i.category}</td></tr>`;
+    }
+    const loc=i.location||'Piso';
+    const bajo=i.minQty>0&&i.qty<i.minQty;
+    const cero=i.qty<=0;
+    const estado=cero?'<b class="rojo">Sin stock</b>':bajo?'<b class="naranja">Bajo</b>':'OK';
+    const val=(Number(i.cost)||0)*(Number(i.qty)||0); totalVal+=val;
+    body+=`<tr>
+      <td>${escH(i.name)}</td>
+      <td class="c">${loc}</td>
+      <td class="c">${i.qty}</td>
+      <td class="c">${i.unit||'pieza'}</td>
+      <td class="c">${i.minQty>0?i.minQty:'—'}</td>
+      ${isAdmin?`<td class="c">$${val.toFixed(2)}</td>`:''}
+      <td class="c">${estado}</td>
+      <td class="conteo"></td>
+    </tr>`;
+  });
+
+  const cols=`<th>Producto</th><th>Ubic.</th><th>Cant.</th><th>Unidad</th><th>Mín.</th>${isAdmin?'<th>Valor</th>':''}<th>Estado</th><th>Conteo físico</th>`;
+  const totalRow=isAdmin?`<tr class="total"><td colspan="5">TOTAL VALOR INVENTARIO</td><td class="c">$${totalVal.toFixed(2)}</td><td colspan="2"></td></tr>`:'';
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+  <title>Inventario ${catTxt} ${locTxt}</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:24px}
+    h1{font-size:20px;margin:0}
+    .sub{font-size:13px;color:#555;margin:2px 0 2px}
+    .meta{font-size:12px;color:#777;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th{background:#2c3e50;color:#fff;text-align:left;padding:7px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:6px 8px;border-bottom:1px solid #e0e0e0}
+    td.c{text-align:center}
+    tr.grp td{background:#eef2f5;font-weight:bold;font-size:12px;padding:6px 8px;border-top:2px solid #2c3e50}
+    tr.total td{background:#f4f4f4;font-weight:bold;border-top:2px solid #2c3e50}
+    td.conteo{width:70px;border-left:1px dashed #bbb}
+    .rojo{color:#c0392b}.naranja{color:#d35400}
+    tr:nth-child(even) td:not(.conteo){background:#fafafa}
+    @media print{body{margin:10mm}button{display:none}@page{margin:12mm}}
+    .print-btn{margin:16px 0;padding:12px 20px;background:#2c3e50;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer}
+  </style></head><body>
+    <h1>Los Pares 84×88 — Inventario</h1>
+    <div class="sub"><b>${catTxt}</b> · <b>${locTxt}</b></div>
+    <div class="meta">${fecha} · ${hora} · ${rows.length} producto${rows.length===1?'':'s'}</div>
+    <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <table><thead><tr>${cols}</tr></thead><tbody>${body}${totalRow}</tbody></table>
+    <script>setTimeout(function(){window.print()},400);<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank');
+  if(!w){ showToast('Permite las ventanas emergentes para imprimir','err'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  closeModal('pdfModal');
 }
 
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
