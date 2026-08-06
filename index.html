@@ -479,15 +479,10 @@ async function refreshData(){ showLoader('Actualizando...'); await loadAll(); hi
 
 function renderInventory(){
   const isAdmin=currentUser.role==='admin';
-  let filtered=items
-    .filter(i=>catFilter==='Todas'||i.category===catFilter)
-    .filter(i=>locFilter==='Todas'||(i.location||'Piso')===locFilter)
-    .filter(i=>(i.name||'').toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const lowStock=items.filter(i=>i.minQty>0&&i.qty<i.minQty);
   return`${syncBar()}
     <div class="top-bar">
-      <input class="search" placeholder="🔍 Buscar..." value="${escH(searchTerm)}" oninput="searchTerm=this.value;renderMain()">
+      <input class="search" id="invSearch" placeholder="🔍 Buscar..." value="${escH(searchTerm)}" oninput="onInvSearch(this.value)">
       <button class="btn-add" onclick="openItemModal()">＋ Agregar</button>
       <button class="btn-pdf" onclick="document.getElementById('pdfModal').classList.add('open')">📄 PDF</button>
     </div>
@@ -500,9 +495,23 @@ function renderInventory(){
       <button class="chip${locFilter==='Bodega'?' on':''}" onclick="locFilter='Bodega';renderMain()">🏠 Bodega</button>
     </div>
     ${lowStock.length?`<div class="alert-box">⚠️ <b>${lowStock.length} producto${lowStock.length>1?'s':''}</b> con stock bajo</div>`:''}
-    ${filtered.length===0
-      ?`<div class="empty"><div style="font-size:44px">🥡</div><div>Sin productos aquí</div></div>`
-      :`<div class="grid">${filtered.map(i=>cardHTML(i,isAdmin)).join('')}</div>`}`;
+    <div id="invResults">${renderInvResults(isAdmin)}</div>`;
+}
+function renderInvResults(isAdmin){
+  if(isAdmin===undefined) isAdmin=currentUser.role==='admin';
+  const filtered=items
+    .filter(i=>catFilter==='Todas'||i.category===catFilter)
+    .filter(i=>locFilter==='Todas'||(i.location||'Piso')===locFilter)
+    .filter(i=>(i.name||'').toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  return filtered.length===0
+    ?`<div class="empty"><div style="font-size:44px">🥡</div><div>Sin productos aquí</div></div>`
+    :`<div class="grid">${filtered.map(i=>cardHTML(i,isAdmin)).join('')}</div>`;
+}
+function onInvSearch(v){
+  searchTerm=v;
+  const r=document.getElementById('invResults');
+  if(r) r.innerHTML=renderInvResults();
 }
 
 function cardHTML(item,isAdmin){
@@ -605,9 +614,6 @@ async function saveMovement(){
   renderMain();
 }
 function renderMovements(){
-  const list=[...movements].sort((a,b)=>(b.ts||0)-(a.ts||0))
-    .filter(m=>moveFilter==='Todos'||m.tipo===(moveFilter==='Entradas'?'entrada':'salida'))
-    .filter(m=>(m.itemName||'').toLowerCase().includes(searchTerm.toLowerCase()));
   const hoy=new Date().toDateString();
   const entHoy=movements.filter(m=>m.tipo==='entrada'&&new Date(m.ts).toDateString()===hoy).length;
   const salHoy=movements.filter(m=>m.tipo==='salida'&&new Date(m.ts).toDateString()===hoy).length;
@@ -618,14 +624,20 @@ function renderMovements(){
       <div class="stat-card" style="border-left:4px solid var(--accent)"><span style="font-size:24px">📋</span><div><div style="font-size:18px;font-weight:800;color:var(--accent)">${movements.length}</div><div style="font-size:11px;color:var(--muted)">Total registrados</div></div></div>
     </div>
     <div class="top-bar">
-      <input class="search" placeholder="🔍 Buscar producto..." value="${escH(searchTerm)}" oninput="searchTerm=this.value;renderMain()">
+      <input class="search" id="movSearch" placeholder="🔍 Buscar producto..." value="${escH(searchTerm)}" oninput="onMovSearch(this.value)">
     </div>
     <div class="cat-row">
       ${['Todos','Entradas','Salidas'].map(f=>`<button class="chip${moveFilter===f?' on':''}" onclick="moveFilter='${f}';renderMain()">${f}</button>`).join('')}
     </div>
-    ${list.length===0
-      ?`<div class="empty"><div style="font-size:44px">🔄</div><div>Sin movimientos aún</div></div>`
-      :`<div style="display:flex;flex-direction:column;gap:8px">${list.map(m=>{
+    <div id="movResults">${renderMovResults()}</div>`;
+}
+function renderMovResults(){
+  const list=[...movements].sort((a,b)=>(b.ts||0)-(a.ts||0))
+    .filter(m=>moveFilter==='Todos'||m.tipo===(moveFilter==='Entradas'?'entrada':'salida'))
+    .filter(m=>(m.itemName||'').toLowerCase().includes(searchTerm.toLowerCase()));
+  return list.length===0
+    ?`<div class="empty"><div style="font-size:44px">🔄</div><div>Sin movimientos aún</div></div>`
+    :`<div style="display:flex;flex-direction:column;gap:8px">${list.map(m=>{
         const ent=m.tipo==='entrada';const col=ent?'var(--green)':'var(--red)';
         return`<div class="card" style="border-left:4px solid ${col}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -637,7 +649,12 @@ function renderMovements(){
           <div style="font-size:11px;color:var(--dim);margin-top:6px;display:flex;justify-content:space-between">
             <span>👤 ${escH(m.usuario||'')}</span><span>🕐 ${fmtDate(m.ts)}</span>
           </div>
-        </div>`;}).join('')}</div>`}`;
+        </div>`;}).join('')}</div>`;
+}
+function onMovSearch(v){
+  searchTerm=v;
+  const r=document.getElementById('movResults');
+  if(r) r.innerHTML=renderMovResults();
 }
 function renderDashboard(){
   const isAdmin=currentUser.role==='admin';
