@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -341,7 +342,9 @@ const CAT_ICONS = {Alcohol:'🍾',Refrescos:'🥤',Abarrotes:'🛒',Desechables:
 const CATS = ['Alcohol','Refrescos','Abarrotes','Desechables','Limpieza'];
 
 const URL_SUGERIDA = "https://script.google.com/macros/s/AKfycbwYCac8AAJFet-02dqdob4X_oCHWtl_p9_uHHZ2htLMCXqa53ooeV1niRQAdQElZlHXtA/exec";
-let SCRIPT_URL = localStorage.getItem('rp_script_url') || '';
+let SCRIPT_URL = localStorage.getItem('rp_script_url') || URL_SUGERIDA;
+// Guardar en localStorage para futuras aperturas (evita pedir URL tras borrar caché)
+if(!localStorage.getItem('rp_script_url')) localStorage.setItem('rp_script_url', SCRIPT_URL);
 let users=[],items=[],movements=[],currentUser=null,currentTab='inventory',catFilter='Todas',locFilter='Todas',searchTerm='';
 let moveFilter='Todos';
 
